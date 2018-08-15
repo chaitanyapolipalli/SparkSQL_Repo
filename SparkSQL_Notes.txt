@@ -1,0 +1,94 @@
+Spark SQL Notes:
+----------------
+
+ITVERSITY:
+----------
+
+spark-sql --master yarn --conf spark.ui.port=14521
+
+set hive.metastore.warehouse.dir; --will return base directory for all hive databases
+
+RDD to DF Example:
+------------------
+
+val orderRDD = sc.textFile("/public/retail_db/orders")
+
+val ordersDF = orderRDD.map( o => {
+(o.split(",")(0).toInt,o.split(",")(1),o.split(",")(2).toInt,o.split(",")(3))
+}).toDF("order_id","order_date","order_customer_id","order_status")
+
+ordersDF.printSchema
+
+ordersDF.registerTempTable("orders")
+
+sqlContext.sql("select order_status, count(1) count_by_status from orders group by order_status").show
+
+val order_ItemsRDD = sc.textFile("/public/retail_db/order_items")
+
+val order_ItemsDF = order_ItemsRDD.map( o => {
+(o.split(",")(0).toInt,o.split(",")(1).toInt,o.split(",")(2).toInt,o.split(",")(3).toInt,o.split(",")(4).toFloat,o.split(",")(5).toFloat)
+}).toDF("order_item_id","order_item_order_id","order_item_product_id","order_item_quantity","order_item_subtotal","order_item_product_price")
+
+order_ItemsDF.printSchema
+
+order_ItemsDF.registerTempTable("order_items")
+
+Local file to DF Example:
+-------------------------
+
+val productsRaw = scala.io.Source.fromFile("/home/chaitanyapolipalli/retail_db/products/part-00000").getLines.toList
+val productsRDD = sc.parallelize(productsRaw)
+val productsDF = productsRDD.map( p=>{
+(p.split(",")(0).toInt,p.split(",")(2))
+}).toDF("product_id","product_name")
+
+productsDF.registerTempTable("products")
+
+sqlContext.sql("select * from products").show
+
+sqlContext.setConf("spark.sql.shuffle.partitions","2") //use two threads to run instead of default 200 threads
+
+----------------------------------------------------------------------------------------------------------------
+
+Problem Statement:
+-------------------
+
+val daily_revenue_per_product  = sqlContext.sql("Select o.order_date, p.product_name, sum(oi.order_item_subtotal) daily_revenue from "+
+"orders o join order_items oi on o.order_id = oi.order_item_order_id "+
+"join products p on p.product_id = oi.order_item_product_id "+
+"where o.order_status IN ('COMPLETE','CLOSED') "+
+"group by order_date, product_name order by order_date, daily_revenue desc")
+
+sqlContext.sql("create table chaitanyapolipalli_daily_revenue_txt.dail_revenue_df(order_date string, product_name string, daily_revenue float)" +
+"stored as ORC")
+
+daily_revenue_per_product.insertInto("chaitanyapolipalli_daily_revenue_txt.dail_revenue_df")
+
+sqlContext.sql("select * from chaitanyapolipalli_daily_revenue_txt.dail_revenue_df").show
+
+/*To write to a file*/
+daily_revenue_per_product.write.orc("/user/chaitanyapolipalli/df_save/")
+
+DF-Operations:
+--------------
+/*Insert into hive table*/
+daily_revenue_per_product.insertInto
+
+/*Insert into relational Tables like mysql, sqlserver, oracle*/
+daily_revenue_per_product.insertIntoJDBC
+
+/*Saving to file*/
+daily_revenue_per_product.save("file_path","file_format")
+
+/*Writing into different file formats*/
+daily_revenue_per_product.write.orc/parquet/json/etc
+
+/*Df to RDD*/
+daily_revenue_per_product.rdd
+
+/*Select few columns from DF*/
+daily_revenue_per_product.select("order_date").show
+
+/*Applying filter on DF*/
+daily_revenue_per_product.filter(daily_revenue_per_product("order_date")==="2013-07-25").show
+
